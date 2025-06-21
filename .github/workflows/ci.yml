@@ -7,7 +7,7 @@ on:
     branches: [ "main" ]
 
 env:
-  APP_NAME: "testmain"
+  APP_NAME: "testmain"  # Nombre en minúsculas
   JAR_NAME: "app.jar"
 
 jobs:
@@ -51,19 +51,25 @@ jobs:
           echo "Waiting for MySQL... Attempt $i/10"
         done
 
-    # Construir la aplicación
     - name: Build application
       run: |
         ./gradlew clean bootJar --info
-        ls -la build/libs/ # Verifica que el JAR existe
+        ls -la build/libs/
 
-    # Ejecutar tests
     - name: Run tests
       run: ./gradlew test --info --stacktrace
       env:
         SPRING_PROFILES_ACTIVE: test
 
-    # Configurar Docker
+    # Convertir todo a minúsculas para Docker
+    - name: Set lowercase variables
+      id: set_vars
+      run: |
+        OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+        APP_NAME_LOWER=$(echo "${{ env.APP_NAME }}" | tr '[:upper:]' '[:lower:]')
+        echo "owner_lower=$OWNER_LOWER" >> $GITHUB_OUTPUT
+        echo "app_name_lower=$APP_NAME_LOWER" >> $GITHUB_OUTPUT
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
@@ -74,12 +80,11 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    # Construir y publicar imagen Docker
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
       with:
         context: .
-        push: ${{ github.event_name == 'push' }}  # Solo push en eventos de push
+        push: ${{ github.event_name == 'push' }}
         tags: |
-          ghcr.io/${{ github.repository_owner | lower }}/${{ env.APP_NAME }}:latest
-          ghcr.io/${{ github.repository_owner | lower }}/${{ env.APP_NAME }}:${{ github.sha }}
+          ghcr.io/${{ steps.set_vars.outputs.owner_lower }}/${{ steps.set_vars.outputs.app_name_lower }}:latest
+          ghcr.io/${{ steps.set_vars.outputs.owner_lower }}/${{ steps.set_vars.outputs.app_name_lower }}:${{ github.sha }}
