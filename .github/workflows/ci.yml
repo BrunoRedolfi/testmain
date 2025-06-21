@@ -81,5 +81,5 @@ jobs:
         context: .
         push: ${{ github.event_name == 'push' }}  # Solo push en eventos de push
         tags: |
-          ghcr.io/${{ github.repository_owner }}/${{ env.APP_NAME }}:latest
-          ghcr.io/${{ github.repository_owner }}/${{ env.APP_NAME }}:${{ github.sha }}
+          ghcr.io/${{ github.repository_owner | lower }}/${{ env.APP_NAME }}:latest
+          ghcr.io/${{ github.repository_owner | lower }}/${{ env.APP_NAME }}:${{ github.sha }}
