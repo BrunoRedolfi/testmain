@@ -1,32 +1,46 @@
 name: Publish Docker Image
 
 on:
-  push:
-    branches: [ "main" ]
-    tags: [ 'v*' ]  # Opcional: publica también cuando creas tags
+  workflow_run:
+    workflows: ["Java CI with Gradle"]
+    types:
+      - completed
 
 jobs:
   build-and-push:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
-      packages: write  # Permiso esencial para publicar en GHCR
+      packages: write
       contents: read
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download built JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: application-jar
+          path: build/libs/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}  # Se usa automáticamente
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository | lower }}:latest
-            ghcr.io/${{ github.repository | lower }}:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/${{ env.APP_NAME }}:latest
+            ghcr.io/${{ github.repository_owner }}/${{ env.APP_NAME }}:${{ github.sha }}
+          build-args: |
+            APP_NAME=${{ env.APP_NAME }}
