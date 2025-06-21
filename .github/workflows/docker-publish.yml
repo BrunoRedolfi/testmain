@@ -20,7 +20,7 @@ jobs:
       - name: Download JAR artifact
         uses: actions/download-artifact@v4
         with:
-          name: app-jar-artifact # Nombre exacto que usamos al subir
+          name: app.jar # Nombre exacto que usamos al subir
           path: build/libs/ # Misma ruta que espera el Dockerfile
 
       - name: Set up Docker Buildx
