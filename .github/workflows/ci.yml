@@ -67,5 +67,5 @@ jobs:
     - name: Upload JAR artifact
       uses: actions/upload-artifact@v4
       with:
-        name: app-jar-artifact # Nombre fijo para el artifact
+        name: app.jar # Nombre fijo para el artifact
         path: build/libs/${{ env.JAR_NAME }}
