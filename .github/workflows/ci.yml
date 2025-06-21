@@ -7,7 +7,7 @@ on:
     branches: [ "main" ]
 
 env:
-  APP_NAME: "testmain"  # Nombre en minúsculas
+  APP_NAME: "testmain"
   JAR_NAME: "app.jar"
 
 jobs:
@@ -61,6 +61,16 @@ jobs:
       env:
         SPRING_PROFILES_ACTIVE: test
 
+    # Convertir variables a minúsculas
+    - name: Set lowercase tags
+      id: set_tags
+      run: |
+        OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+        APP_NAME_LOWER=$(echo "${{ env.APP_NAME }}" | tr '[:upper:]' '[:lower:]')
+        echo "owner_lower=$OWNER_LOWER" >> $GITHUB_OUTPUT
+        echo "app_name_lower=$APP_NAME_LOWER" >> $GITHUB_OUTPUT
+        echo "sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
@@ -77,5 +87,5 @@ jobs:
         context: .
         push: ${{ github.event_name == 'push' }}
         tags: |
-          ghcr.io/${{ github.repository_owner | lower }}/${{ env.APP_NAME | lower }}:latest
-          ghcr.io/${{ github.repository_owner | lower }}/${{ env.APP_NAME | lower }}:${{ github.sha }}
+          ghcr.io/${{ steps.set_tags.outputs.owner_lower }}/${{ steps.set_tags.outputs.app_name_lower }}:latest
+          ghcr.io/${{ steps.set_tags.outputs.owner_lower }}/${{ steps.set_tags.outputs.app_name_lower }}:${{ steps.set_tags.outputs.sha }}
