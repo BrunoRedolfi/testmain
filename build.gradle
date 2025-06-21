@@ -29,6 +29,13 @@ configurations {
     }
 }
 
+bootJar {
+    archiveFileName = "app.jar"  // Nombre consistente para Docker
+    layered {
+        enabled = true
+    }
+}
+
 repositories {
     mavenCentral()
 }
@@ -68,3 +75,4 @@ dependencyCheck {
     failBuildOnCVSS = 7  // Fallar solo con vulnerabilidades críticas
     suppressionFile = 'config/dependency-suppressions.xml'  // Falsos positivos
 }
+
