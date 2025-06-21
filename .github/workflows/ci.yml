@@ -3,12 +3,10 @@ name: Java CI and Docker Publish
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
 
 env:
-  APP_NAME: "testmain"
-  JAR_NAME: "app.jar"
+  APP_NAME: "testmain"  # Nombre de la aplicación en minúsculas
+  JAR_NAME: "app.jar"   # Nombre del archivo JAR
 
 jobs:
   build-test-and-publish:
@@ -31,49 +29,36 @@ jobs:
           --health-retries=3
 
     steps:
-    - uses: actions/checkout@v4
+    # Paso 1: Obtener código
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-    - name: Set up JDK 17
+    # Paso 2: Configurar Java
+    - name: Setup Java 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
         cache: 'gradle'
 
-    - name: Make gradlew executable
-      run: chmod +x gradlew
-
-    - name: Wait for MySQL
-      run: |
-        for i in {1..10}; do
-          nc -z localhost 3306 && break
-          sleep 5
-          echo "Waiting for MySQL... Attempt $i/10"
-        done
-
+    # Paso 3: Construir aplicación
     - name: Build application
       run: |
-        ./gradlew clean bootJar --info
+        chmod +x gradlew
+        ./gradlew clean bootJar
         ls -la build/libs/
 
+    # Paso 4: Ejecutar tests
     - name: Run tests
-      run: ./gradlew test --info --stacktrace
+      run: ./gradlew test
       env:
         SPRING_PROFILES_ACTIVE: test
 
-    # Convertir variables a minúsculas
-    - name: Set lowercase tags
-      id: set_tags
-      run: |
-        OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-        APP_NAME_LOWER=$(echo "${{ env.APP_NAME }}" | tr '[:upper:]' '[:lower:]')
-        echo "owner_lower=$OWNER_LOWER" >> $GITHUB_OUTPUT
-        echo "app_name_lower=$APP_NAME_LOWER" >> $GITHUB_OUTPUT
-        echo "sha=${{ github.sha }}" >> $GITHUB_OUTPUT
-
-    - name: Set up Docker Buildx
+    # Paso 5: Configurar Docker
+    - name: Setup Docker
       uses: docker/setup-buildx-action@v3
 
+    # Paso 6: Login al registro
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v3
       with:
@@ -81,11 +66,16 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    # Paso 7: Construir y publicar imagen
     - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        push: ${{ github.event_name == 'push' }}
-        tags: |
-          ghcr.io/${{ steps.set_tags.outputs.owner_lower }}/${{ steps.set_tags.outputs.app_name_lower }}:latest
-          ghcr.io/${{ steps.set_tags.outputs.owner_lower }}/${{ steps.set_tags.outputs.app_name_lower }}:${{ steps.set_tags.outputs.sha }}
+      run: |
+        # Convertir todo a minúsculas
+        OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+        APP_NAME_LOWER=$(echo "${{ env.APP_NAME }}" | tr '[:upper:]' '[:lower:]')
+
+        # Construir imagen con tags
+        docker buildx build \
+          --tag ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:latest \
+          --tag ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:${{ github.sha }} \
+          --push .
+      shell: bash
