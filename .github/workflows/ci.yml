@@ -12,6 +12,10 @@ jobs:
   build-test-and-publish:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      packages: write  # ¡NECESARIO PARA PUBLICAR PAQUETES!
+
     services:
       mysql:
         image: mysql:8.0
@@ -68,7 +72,6 @@ jobs:
 
         # Construir y publicar imagen
         docker buildx build \
-          --platform linux/amd64,linux/arm64 \
           --tag ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:latest \
           --tag ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:${{ github.sha }} \
           --push .
