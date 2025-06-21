@@ -7,8 +7,8 @@ on:
     branches: [ "main" ]
 
 env:
-  SPRING_PROFILES_ACTIVE: test  # Usamos test para H2 en CI
-  APP_NAME: testmain  # Nombre en minúsculas para Docker
+  APP_NAME: "testmain" # Nombre en minúsculas
+  JAR_NAME: "app.jar"  # Nombre consistente
 
 jobs:
   build-and-test:
@@ -43,7 +43,7 @@ jobs:
     - name: Make gradlew executable
       run: chmod +x gradlew
 
-    - name: Wait for MySQL to be ready
+    - name: Wait for MySQL
       run: |
         for i in {1..10}; do
           nc -z localhost 3306 && break
@@ -51,26 +51,21 @@ jobs:
           echo "Waiting for MySQL... Attempt $i/10"
         done
 
-    - name: Build application JAR
-      run: ./gradlew clean bootJar --info
+    # Paso explícito para construir el JAR
+    - name: Build application
+      run: |
+        ./gradlew clean bootJar --info
+        ls -la build/libs/ # Verifica que el JAR existe
 
+    # Tests con H2
     - name: Run tests
       run: ./gradlew test --info --stacktrace
       env:
-        SPRING_PROFILES_ACTIVE: test  # Fuerza H2 para tests
+        SPRING_PROFILES_ACTIVE: test
 
-    - name: Upload test results
-      if: always()
+    # Sube el JAR con nombre explícito
+    - name: Upload JAR artifact
       uses: actions/upload-artifact@v4
       with:
-        name: test-results
-        path: |
-          build/test-results/**/*.xml
-          build/reports/tests/**/*
-
-    - name: Upload application JAR
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: application-jar
-        path: build/libs/app.jar  # Nombre exacto del archivo
+        name: app-jar-artifact # Nombre fijo para el artifact
+        path: build/libs/${{ env.JAR_NAME }}
