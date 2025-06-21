@@ -1,0 +1,75 @@
+name: Java CI with Gradle
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  SPRING_PROFILES_ACTIVE: ci  # Se aplica a todos los pasos
+  DB_HOST: localhost
+  DB_PORT: 3306
+  DB_NAME: testdb
+  DB_USER: testuser
+  DB_PASSWORD: testpass
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ env.DB_PASSWORD }}
+          MYSQL_DATABASE: ${{ env.DB_NAME }}
+          MYSQL_USER: ${{ env.DB_USER }}
+          MYSQL_PASSWORD: ${{ env.DB_PASSWORD }}
+        ports:
+          - ${{ env.DB_PORT }}:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+          --connect-timeout=60
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: 'gradle'
+
+    - name: Make gradlew executable
+      run: chmod +x gradlew
+
+    - name: Wait for MySQL to be ready
+      run: sleep 15  # Espera para asegurar que MySQL esté listo
+
+    - name: Build and test with Gradle
+      run: ./gradlew build --info --stacktrace
+      env:
+        SPRING_DATASOURCE_URL: jdbc:mysql://${{ env.DB_HOST }}:${{ env.DB_PORT }}/${{ env.DB_NAME }}?useSSL=false&allowPublicKeyRetrieval=true
+        SPRING_DATASOURCE_USERNAME: ${{ env.DB_USER }}
+        SPRING_DATASOURCE_PASSWORD: ${{ env.DB_PASSWORD }}
+
+    - name: Upload test results
+      if: always()  # Se ejecuta aunque falle el build
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results
+        path: |
+          build/test-results/**/*.xml
+          build/reports/tests/**/*
+
+    - name: Upload build artifacts
+      if: success()  # Solo si el build fue exitoso
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: build/libs/*.jar
