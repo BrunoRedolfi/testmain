@@ -33,7 +33,6 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=3
-          --connect-timeout=60
 
     steps:
     - uses: actions/checkout@v4
@@ -49,7 +48,7 @@ jobs:
       run: chmod +x gradlew
     
     - name: Wait for MySQL to be ready
-      run: sleep 15
+      run: sleep 20  # Aumenté el tiempo de espera
     
     - name: Build and test with Gradle
       run: ./gradlew build --info --stacktrace
