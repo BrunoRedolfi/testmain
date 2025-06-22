@@ -1,29 +1,14 @@
-# Usa la imagen oficial de OpenJDK con Java 17
-FROM eclipse-temurin:17-jdk as builder
-
-# Directorio de trabajo
-WORKDIR /app
-
-# Copia los archivos de construcción
-COPY gradlew .
-COPY gradle gradle
-COPY build.gradle .
-COPY settings.gradle .
-COPY src src
-
-# Construye la aplicación
-RUN ./gradlew bootJar
-
-# Imagen final más pequeña
+# Imagen base ligera con Java 17
 FROM eclipse-temurin:17-jre
 
+# Directorio de trabajo en el contenedor
 WORKDIR /app
 
-# Copia el JAR construido
-COPY --from=builder /app/build/libs/*.jar app.jar
+# Copiar el JAR construido
+COPY build/libs/*.jar app.jar
 
-# Puerto expuesto
+# Exponer el puerto de la aplicación
 EXPOSE 9000
 
-# Comando de ejecución
+# Comando para ejecutar la aplicación
 ENTRYPOINT ["java", "-jar", "app.jar"]
