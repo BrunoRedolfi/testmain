@@ -2,19 +2,19 @@ name: Java CI and Docker Publish
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev", "test", "prod" ]
 
 env:
   APP_NAME: "testmain"
   JAR_NAME: "app.jar"
+  REGISTRY: ghcr.io
 
 jobs:
   build-test-and-publish:
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
-      packages: write  # ¡NECESARIO PARA PUBLICAR PAQUETES!
+      packages: write
 
     services:
       mysql:
@@ -47,7 +47,15 @@ jobs:
       run: |
         chmod +x gradlew
         ./gradlew clean bootJar
+        echo "📦 JAR files built:"
         ls -la build/libs/
+        # Verificar que el JAR existe
+        if [ ! -f "build/libs/app.jar" ]; then
+          echo "❌ Error: app.jar not found!"
+          echo "Available files in build/libs/:"
+          ls -la build/libs/
+          exit 1
+        fi
 
     - name: Run tests
       run: ./gradlew test
@@ -60,19 +68,88 @@ jobs:
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v3
       with:
-        registry: ghcr.io
+        registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Build and push Docker image
+    - name: Extract metadata
+      id: meta
       run: |
+        # Extraer el nombre de la rama del ref
+        BRANCH_NAME=${GITHUB_REF#refs/heads/}
+        echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+
         # Convertir nombres a minúsculas
         OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
         APP_NAME_LOWER=$(echo "${{ env.APP_NAME }}" | tr '[:upper:]' '[:lower:]')
 
-        # Construir y publicar imagen
-        docker buildx build \
-          --tag ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:latest \
-          --tag ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:${{ github.sha }} \
-          --push .
-      shell: bash
+        # Determinar el tag basado en la rama
+        case "$BRANCH_NAME" in
+          "main")
+            ENV_TAG="latest"
+            ;;
+          "dev")
+            ENV_TAG="dev"
+            ;;
+          "test")
+            ENV_TAG="test"
+            ;;
+          "prod")
+            ENV_TAG="prod"
+            ;;
+          *)
+            ENV_TAG="$BRANCH_NAME"
+            ;;
+        esac
+
+        # Crear las variables de entorno
+        echo "OWNER_LOWER=$OWNER_LOWER" >> $GITHUB_ENV
+        echo "APP_NAME_LOWER=$APP_NAME_LOWER" >> $GITHUB_ENV
+        echo "ENV_TAG=$ENV_TAG" >> $GITHUB_ENV
+        echo "IMAGE_NAME=${{ env.REGISTRY }}/$OWNER_LOWER/$APP_NAME_LOWER" >> $GITHUB_ENV
+
+        echo "🏷️  Metadata extracted:"
+        echo "   Branch: $BRANCH_NAME"
+        echo "   Owner: $OWNER_LOWER"
+        echo "   App: $APP_NAME_LOWER"
+        echo "   Tag: $ENV_TAG"
+        echo "   Full image: ${{ env.REGISTRY }}/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG"
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64
+        push: true
+        tags: |
+          ${{ env.IMAGE_NAME }}:${{ env.ENV_TAG }}
+          ${{ env.IMAGE_NAME }}:${{ env.ENV_TAG }}-${{ github.sha }}
+        labels: |
+          org.opencontainers.image.title=${{ env.APP_NAME }}
+          org.opencontainers.image.description=Spring Boot application
+          org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          org.opencontainers.image.version=${{ env.ENV_TAG }}
+          org.opencontainers.image.created=${{ github.event.repository.pushed_at }}
+          org.opencontainers.image.revision=${{ github.sha }}
+
+    - name: Verify image push
+      run: |
+        echo "🔍 Verifying image was pushed successfully..."
+        docker pull ${{ env.IMAGE_NAME }}:${{ env.ENV_TAG }}
+        docker images | grep ${{ env.APP_NAME_LOWER }}
+
+        echo "✅ Image verification completed!"
+        echo "📋 Image details:"
+        docker inspect ${{ env.IMAGE_NAME }}:${{ env.ENV_TAG }} --format='{{.RepoTags}}'
+
+    - name: Summary
+      run: |
+        echo "✅ Build completed successfully!"
+        echo "📦 Docker images pushed:"
+        echo "   - ${{ env.IMAGE_NAME }}:${{ env.ENV_TAG }}"
+        echo "   - ${{ env.IMAGE_NAME }}:${{ env.ENV_TAG }}-${{ github.sha }}"
+        echo "🌿 Branch: ${{ env.BRANCH_NAME }}"
+        echo "🔄 Ready for ArgoCD deployment!"
+        echo ""
+        echo "🔗 View in GitHub Container Registry:"
+        echo "   https://github.com/${{ github.repository_owner }}/packages/container/package/${{ env.APP_NAME_LOWER }}"
