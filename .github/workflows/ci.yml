@@ -100,7 +100,7 @@ jobs:
         echo "- ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG"
         echo "- ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG-${{ github.sha }}"
 
-        # Construir y publicar imagen con tags específicos por ambiente
+        # Construir y publicar imagen - MISMO PROCESO ORIGINAL
         docker buildx build \
           --tag ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG \
           --tag ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG-${{ github.sha }} \
