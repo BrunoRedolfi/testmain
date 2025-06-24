@@ -2,7 +2,7 @@ name: Java CI and Docker Publish
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev", "test", "prod" ]
 
 env:
   APP_NAME: "testmain"
@@ -11,10 +11,9 @@ env:
 jobs:
   build-test-and-publish:
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
-      packages: write  # ¡NECESARIO PARA PUBLICAR PAQUETES!
+      packages: write
 
     services:
       mysql:
@@ -64,15 +63,66 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Extract branch name
+      shell: bash
+      run: |
+        # Extraer el nombre de la rama del ref
+        BRANCH_NAME=${GITHUB_REF#refs/heads/}
+        echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+        echo "Branch: $BRANCH_NAME"
+
     - name: Build and push Docker image
       run: |
         # Convertir nombres a minúsculas
         OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
         APP_NAME_LOWER=$(echo "${{ env.APP_NAME }}" | tr '[:upper:]' '[:lower:]')
 
-        # Construir y publicar imagen
+        # Determinar el tag basado en la rama
+        case "${{ env.BRANCH_NAME }}" in
+          "main")
+            ENV_TAG="latest"
+            ;;
+          "dev")
+            ENV_TAG="dev"
+            ;;
+          "test")
+            ENV_TAG="test"
+            ;;
+          "prod")
+            ENV_TAG="prod"
+            ;;
+          *)
+            ENV_TAG="${{ env.BRANCH_NAME }}"
+            ;;
+        esac
+
+        echo "Building image with tags:"
+        echo "- ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG"
+        echo "- ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG-${{ github.sha }}"
+
+        # Construir y publicar imagen con tags específicos por ambiente
         docker buildx build \
-          --tag ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:latest \
-          --tag ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:${{ github.sha }} \
+          --tag ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG \
+          --tag ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG-${{ github.sha }} \
           --push .
       shell: bash
+
+    - name: Summary
+      run: |
+        OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+        APP_NAME_LOWER=$(echo "${{ env.APP_NAME }}" | tr '[:upper:]' '[:lower:]')
+
+        case "${{ env.BRANCH_NAME }}" in
+          "main") ENV_TAG="latest" ;;
+          "dev") ENV_TAG="dev" ;;
+          "test") ENV_TAG="test" ;;
+          "prod") ENV_TAG="prod" ;;
+          *) ENV_TAG="${{ env.BRANCH_NAME }}" ;;
+        esac
+
+        echo "✅ Build completed successfully!"
+        echo "📦 Docker images pushed:"
+        echo "   - ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG"
+        echo "   - ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG-${{ github.sha }}"
+        echo "🌿 Branch: ${{ env.BRANCH_NAME }}"
+        echo "🔄 Ready for ArgoCD deployment!"
