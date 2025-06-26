@@ -126,3 +126,53 @@ jobs:
         echo "   - ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG-${{ github.sha }}"
         echo "🌿 Branch: ${{ env.BRANCH_NAME }}"
         echo "🔄 Ready for ArgoCD deployment!"
+    - name: Update K8s manifests
+      if: github.ref != 'refs/heads/main'  # No actualizar para main/latest
+      run: |
+        # Configurar git
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Clonar el repo de k8s manifests
+        git clone https://${{ secrets.K8S_REPO_TOKEN }}@github.com/${{ github.repository_owner }}/k8s.git k8s-repo
+        cd k8s-repo
+
+        # Determinar environment y tag
+        case "${{ env.BRANCH_NAME }}" in
+          "dev")
+            ENV="dev"
+            TAG="dev-${{ github.sha }}"
+            ;;
+          "test")
+            TAG="test-${{ github.sha }}"
+            ENV="test"
+            ;;
+          "prod")
+            TAG="prod-${{ github.sha }}"
+            ENV="prod"
+            ;;
+          *)
+            echo "Branch ${{ env.BRANCH_NAME }} not configured for deployment"
+            exit 0
+            ;;
+        esac
+
+        echo "Updating $ENV environment with tag: $TAG"
+
+        # Actualizar el kustomization.yaml del overlay correspondiente
+        sed -i "s|newTag: .*|newTag: $TAG|" overlays/$ENV/kustomization.yaml
+
+        # Verificar cambios
+        if git diff --quiet; then
+          echo "No changes to commit"
+          exit 0
+        fi
+
+        # Commit y push
+        git add overlays/$ENV/kustomization.yaml
+        git commit -m "Update $ENV image tag to $TAG [skip ci]"
+        git push origin main
+
+        echo "✅ K8s manifests updated successfully!"
+        echo "🔄 ArgoCD will detect changes and deploy automatically"
+      shell: bash
