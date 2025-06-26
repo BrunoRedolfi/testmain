@@ -7,6 +7,7 @@ on:
 env:
   APP_NAME: "testmain"
   JAR_NAME: "app.jar"
+  REGISTRY: ghcr.io
 
 jobs:
   build-test-and-publish:
@@ -46,7 +47,15 @@ jobs:
       run: |
         chmod +x gradlew
         ./gradlew clean bootJar
+        echo "📦 JAR files built:"
         ls -la build/libs/
+        # Verificar que el JAR existe
+        if [ ! -f "build/libs/app.jar" ]; then
+          echo "❌ Error: app.jar not found!"
+          echo "Available files in build/libs/:"
+          ls -la build/libs/
+          exit 1
+        fi
 
     - name: Run tests
       run: ./gradlew test
@@ -59,10 +68,9 @@ jobs:
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v3
       with:
-        registry: ghcr.io
+        registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-
     - name: Extract branch name
       shell: bash
       run: |
@@ -73,6 +81,10 @@ jobs:
 
     - name: Build and push Docker image
       run: |
+        # Extraer el nombre de la rama del ref
+        BRANCH_NAME=${GITHUB_REF#refs/heads/}
+        echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+
         # Convertir nombres a minúsculas
         OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
         APP_NAME_LOWER=$(echo "${{ env.APP_NAME }}" | tr '[:upper:]' '[:lower:]')
