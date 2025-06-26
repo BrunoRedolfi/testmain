@@ -71,10 +71,15 @@ jobs:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Extract branch name
+      shell: bash
+      run: |
+        # Extraer el nombre de la rama del ref
+        BRANCH_NAME=${GITHUB_REF#refs/heads/}
+        echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+        echo "Branch: $BRANCH_NAME"
 
-    - name: Extract metadata
-      id: meta
-
+    - name: Build and push Docker image
       run: |
         # Extraer el nombre de la rama del ref
         BRANCH_NAME=${GITHUB_REF#refs/heads/}
@@ -85,8 +90,7 @@ jobs:
         APP_NAME_LOWER=$(echo "${{ env.APP_NAME }}" | tr '[:upper:]' '[:lower:]')
 
         # Determinar el tag basado en la rama
-        case "$BRANCH_NAME" in
-
+        case "${{ env.BRANCH_NAME }}" in
           "main")
             ENV_TAG="latest"
             ;;
@@ -100,58 +104,87 @@ jobs:
             ENV_TAG="prod"
             ;;
           *)
-            ENV_TAG="$BRANCH_NAME"
+            ENV_TAG="${{ env.BRANCH_NAME }}"
             ;;
         esac
 
-        # Crear las variables de entorno
-        echo "OWNER_LOWER=$OWNER_LOWER" >> $GITHUB_ENV
-        echo "APP_NAME_LOWER=$APP_NAME_LOWER" >> $GITHUB_ENV
-        echo "ENV_TAG=$ENV_TAG" >> $GITHUB_ENV
-        echo "IMAGE_NAME=${{ env.REGISTRY }}/$OWNER_LOWER/$APP_NAME_LOWER" >> $GITHUB_ENV
+        echo "Building image with tags:"
+        echo "- ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG"
+        echo "- ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG-${{ github.sha }}"
 
-        echo "🏷️  Metadata extracted:"
-        echo "   Branch: $BRANCH_NAME"
-        echo "   Owner: $OWNER_LOWER"
-        echo "   App: $APP_NAME_LOWER"
-        echo "   Tag: $ENV_TAG"
-        echo "   Full image: ${{ env.REGISTRY }}/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG"
-
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        platforms: linux/amd64
-        push: true
-        tags: |
-          ${{ env.IMAGE_NAME }}:${{ env.ENV_TAG }}
-          ${{ env.IMAGE_NAME }}:${{ env.ENV_TAG }}-${{ github.sha }}
-        labels: |
-          org.opencontainers.image.title=${{ env.APP_NAME }}
-          org.opencontainers.image.description=Spring Boot application
-          org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          org.opencontainers.image.version=${{ env.ENV_TAG }}
-          org.opencontainers.image.created=${{ github.event.repository.pushed_at }}
-          org.opencontainers.image.revision=${{ github.sha }}
-
-    - name: Verify image push
-      run: |
-        echo "🔍 Verifying image was pushed successfully..."
-        docker pull ${{ env.IMAGE_NAME }}:${{ env.ENV_TAG }}
-        docker images | grep ${{ env.APP_NAME_LOWER }}
-
-        echo "✅ Image verification completed!"
-        echo "📋 Image details:"
-        docker inspect ${{ env.IMAGE_NAME }}:${{ env.ENV_TAG }} --format='{{.RepoTags}}'
+        # Construir y publicar imagen - MISMO PROCESO ORIGINAL
+        docker buildx build \
+          --tag ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG \
+          --tag ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG-${{ github.sha }} \
+          --push .
+      shell: bash
 
     - name: Summary
       run: |
+        OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+        APP_NAME_LOWER=$(echo "${{ env.APP_NAME }}" | tr '[:upper:]' '[:lower:]')
+
+        case "${{ env.BRANCH_NAME }}" in
+          "main") ENV_TAG="latest" ;;
+          "dev") ENV_TAG="dev" ;;
+          "test") ENV_TAG="test" ;;
+          "prod") ENV_TAG="prod" ;;
+          *) ENV_TAG="${{ env.BRANCH_NAME }}" ;;
+        esac
+
         echo "✅ Build completed successfully!"
         echo "📦 Docker images pushed:"
-        echo "   - ${{ env.IMAGE_NAME }}:${{ env.ENV_TAG }}"
-        echo "   - ${{ env.IMAGE_NAME }}:${{ env.ENV_TAG }}-${{ github.sha }}"
+        echo "   - ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG"
+        echo "   - ghcr.io/$OWNER_LOWER/$APP_NAME_LOWER:$ENV_TAG-${{ github.sha }}"
         echo "🌿 Branch: ${{ env.BRANCH_NAME }}"
         echo "🔄 Ready for ArgoCD deployment!"
-        echo ""
-        echo "🔗 View in GitHub Container Registry:"
-        echo "   https://github.com/${{ github.repository_owner }}/packages/container/package/${{ env.APP_NAME_LOWER }}"
+    - name: Update K8s manifests
+      if: github.ref != 'refs/heads/main'  # No actualizar para main/latest
+      run: |
+        # Configurar git
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Clonar el repo de k8s manifests
+        git clone https://${{ secrets.K8S_REPO_TOKEN }}@github.com/${{ github.repository_owner }}/k8s.git k8s-repo
+        cd k8s-repo
+
+        # Determinar environment y tag
+        case "${{ env.BRANCH_NAME }}" in
+          "dev")
+            ENV="dev"
+            TAG="dev-${{ github.sha }}"
+            ;;
+          "test")
+            TAG="test-${{ github.sha }}"
+            ENV="test"
+            ;;
+          "prod")
+            TAG="prod-${{ github.sha }}"
+            ENV="prod"
+            ;;
+          *)
+            echo "Branch ${{ env.BRANCH_NAME }} not configured for deployment"
+            exit 0
+            ;;
+        esac
+
+        echo "Updating $ENV environment with tag: $TAG"
+
+        # Actualizar el kustomization.yaml del overlay correspondiente
+        sed -i "s|newTag: .*|newTag: $TAG|" overlays/$ENV/kustomization.yaml
+
+        # Verificar cambios
+        if git diff --quiet; then
+          echo "No changes to commit"
+          exit 0
+        fi
+
+        # Commit y push
+        git add overlays/$ENV/kustomization.yaml
+        git commit -m "Update $ENV image tag to $TAG [skip ci]"
+        git push origin main
+
+        echo "✅ K8s manifests updated successfully!"
+        echo "🔄 ArgoCD will detect changes and deploy automatically"
+      shell: bash
